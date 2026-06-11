@@ -15,6 +15,7 @@ n_pqcd: 3
 
 include_phase_transition: true
 write_eos_extension: true
+eos_extension_max_delta_mu_mev: 500.0
 impose_pqcd: true
 pqcd_cs2_condition: true
 sample_cmax: false

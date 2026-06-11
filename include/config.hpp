@@ -18,6 +18,7 @@ struct Config {
 
     bool include_phase_transition = true;
     bool write_eos_extension = false;
+    double eos_extension_max_delta_mu_mev = 500.0;
     bool impose_pqcd = true;
     bool pqcd_cs2_condition = true;
     bool sample_cmax = false;

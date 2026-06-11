@@ -470,6 +470,131 @@ bool valid_eos_vectors(const EOSSample& sample) {
     return true;
 }
 
+void extend_last_sound_speed_segment(
+    EOSSample& sample,
+    double max_delta_mu_mev,
+    int n_steps_per_100_mev
+) {
+    const std::size_t n0 = sample.mu_ext.size();
+
+    if (n0 < 2 || max_delta_mu_mev <= 0.0 || n_steps_per_100_mev <= 0) {
+        return;
+    }
+
+    const std::size_t i_left = n0 - 2;
+    const std::size_t i_pt = n0 - 1;
+
+    const double mu_left = sample.mu_ext[i_left];
+    const double mu_pt = sample.mu_ext[i_pt];
+
+    const double cs2_left = sample.cs2_ext[i_left];
+    const double cs2_pt = sample.cs2_ext[i_pt];
+
+    if (mu_pt <= mu_left || !is_finite(mu_left) || !is_finite(mu_pt) ||
+        !is_finite(cs2_left) || !is_finite(cs2_pt)) {
+        return;
+    }
+
+    const double slope = (cs2_pt - cs2_left) / (mu_pt - mu_left);
+
+    double delta_mu_stop = max_delta_mu_mev;
+
+    if (slope > 0.0) {
+        const double delta_to_cs2_one = (1.0 - cs2_pt) / slope;
+        if (delta_to_cs2_one > 0.0) {
+            delta_mu_stop = std::min(delta_mu_stop, delta_to_cs2_one);
+        } else if (cs2_pt >= 1.0) {
+            return;
+        }
+    } else if (slope < 0.0) {
+        const double delta_to_cs2_zero = -cs2_pt / slope;
+        if (delta_to_cs2_zero > 0.0) {
+            delta_mu_stop = std::min(delta_mu_stop, delta_to_cs2_zero);
+        } else if (cs2_pt <= 0.0) {
+            return;
+        }
+    } else {
+        if (cs2_pt <= 0.0 || cs2_pt >= 1.0) {
+            return;
+        }
+    }
+
+    if (delta_mu_stop <= 0.0 || !is_finite(delta_mu_stop)) {
+        return;
+    }
+
+    const int n_steps = std::max(
+        1,
+        static_cast<int>(
+            std::ceil(delta_mu_stop / 100.0 *
+                      static_cast<double>(n_steps_per_100_mev))
+        )
+    );
+
+    double mu_prev = mu_pt;
+    double n_prev = sample.n_ext[i_pt];
+    double p_prev = sample.p_ext[i_pt];
+
+    const double dmu_nominal = delta_mu_stop / static_cast<double>(n_steps);
+
+    for (int k = 1; k <= n_steps; ++k) {
+        double mu_next = mu_pt + static_cast<double>(k) * dmu_nominal;
+
+        if (k == n_steps) {
+            mu_next = mu_pt + delta_mu_stop;
+        }
+
+        const double cs2_prev = cs2_pt + slope * (mu_prev - mu_pt);
+        const double cs2_next = cs2_pt + slope * (mu_next - mu_pt);
+
+        if (!is_finite(cs2_prev) || !is_finite(cs2_next)) {
+            break;
+        }
+
+        // Reaching cs2 = 0 makes dn/dmu = n/(mu*cs2) singular.
+        // Therefore do not append a row at exactly cs2 = 0.
+        if (cs2_prev <= 0.0 || cs2_next <= 0.0) {
+            break;
+        }
+
+        // Reaching cs2 = 1 is finite, so the final cs2 = 1 row may be written.
+        if (cs2_prev > 1.0 || cs2_next > 1.0) {
+            break;
+        }
+
+        const double integrand_prev = 1.0 / (mu_prev * cs2_prev);
+        const double integrand_next = 1.0 / (mu_next * cs2_next);
+
+        const double integral =
+            0.5 * (integrand_prev + integrand_next) * (mu_next - mu_prev);
+
+        const double n_next = n_prev * std::exp(integral);
+
+        const double p_next =
+            p_prev + 0.5 * (n_prev + n_next) * (mu_next - mu_prev);
+
+        const double e_next = -p_next + mu_next * n_next;
+
+        if (!is_finite(n_next) || !is_finite(p_next) ||
+            !is_finite(e_next) || !is_finite(mu_next)) {
+            break;
+        }
+
+        append_row_to_extension(
+            sample,
+            e_next,
+            p_next,
+            n_next,
+            mu_next,
+            cs2_next
+        );
+
+        mu_prev = mu_next;
+        n_prev = n_next;
+        p_prev = p_next;
+    }
+}
+
 
 EOSSample make_candidate(
     const Config& cfg,
@@ -693,7 +818,7 @@ EOSSample make_candidate(
         }
     }
     
-    if (cfg.write_eos_extension && cfg.include_phase_transition && pt_left_row_index >= 0) {
+    if (cfg.write_eos_extension && cfg.include_phase_transition && pt_left_row_index >= 1) {
 
         for (int i = 0; i <= pt_left_row_index; ++i) {
             const Row& row = rows[static_cast<std::size_t>(i)];
@@ -707,6 +832,14 @@ EOSSample make_candidate(
                 row.cs2
             );
         }
+
+        constexpr int eos_ext_steps_per_100_mev = 20;
+
+        extend_last_sound_speed_segment(
+            sample,
+            cfg.eos_extension_max_delta_mu_mev,
+            eos_ext_steps_per_100_mev
+        );
     }
 
     if (cfg.impose_pqcd && cfg.n_pqcd > 0) {
@@ -894,8 +1027,17 @@ int run_eos_sampler(const Config& cfg, unsigned int seed) {
             if (cfg.verbose) {
                 std::cout << "accepted EOS " << accepted
                 << ": EOS size=" << sample.e.size()
-                << ", EOSext size=" << sample.e_ext.size()
-                << '\n';
+                << ", EOSext size=" << sample.e_ext.size();
+
+                if (!sample.mu_ext.empty()) {
+                    std::cout << ", EOSext mu range="
+                    << sample.mu_ext.front()
+                    << " -> "
+                    << sample.mu_ext.back()
+                    << " MeV";
+                }
+
+                std::cout << '\n';
             }
 
             create_and_write_sample(file_id, accepted, sample, cfg);
