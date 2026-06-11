@@ -1,11 +1,11 @@
 # EOS/TOV Inference Code
 
-This project samples dense-matter equations of state (EOSs), writes them to HDF5 files, and then solves the Tolman-Oppenheimer-Volkoff (TOV) equations for each sampled EOS. The code is organized as two executables:
+This project samples dense-matter EOS tables, writes them to HDF5 files, and then solves the Tolman-Oppenheimer-Volkoff (TOV) equations for each accepted EOS. The code is organized as two MPI-aware executables:
 
-- `EOS`: samples EOS tables and writes EOS-side parameters and likelihoods.
+- `EOS`: samples EOS tables, writes EOS-side parameters, and optionally writes an auxiliary pre-transition EOS extension.
 - `TOV`: reads the EOS tables, solves stellar sequences, computes TOV-side likelihoods, and appends the results to the same HDF5 files.
 
-The code is MPI-aware. Each MPI rank works with its own HDF5 file:
+Each MPI rank writes or processes its own HDF5 file:
 
 ```text
 rank 0 -> 0.h5
@@ -14,7 +14,7 @@ rank 2 -> 2.h5
 ...
 ```
 
-Run the EOS and TOV stages with the same number of MPI ranks unless you intentionally want only a subset of files processed.
+Run the EOS and TOV stages with the same number of MPI ranks unless only a subset of rank files should be processed.
 
 ## Project layout
 
@@ -44,7 +44,7 @@ EOScode/
     plot_results.py
 ```
 
-The external constraint and input data files are not stored directly in the source tree. Their paths are set in `config/default.yaml`.
+External EOS input tables and likelihood files are not stored directly in the source tree. Their paths are configured in `config/default.yaml`.
 
 ## Dependencies
 
@@ -55,7 +55,7 @@ Required:
 - MPI
 - HDF5 with C API
 
-Optional for plotting:
+Optional for plotting and inspection:
 
 - Python 3
 - `h5py`
@@ -72,13 +72,13 @@ module load hdf5
 
 ## Configuration
 
-The runtime configuration is stored in YAML format. The default file is:
+The runtime configuration is stored in a flat YAML file. The default file is:
 
 ```text
 config/default.yaml
 ```
 
-The parser currently expects a simple flat `key: value` format. Avoid nested YAML blocks unless the parser is extended.
+The parser expects simple `key: value` entries. Do not use nested YAML blocks unless the parser is extended.
 
 Typical development settings are:
 
@@ -111,6 +111,40 @@ pqcd_file: "../pQCD/cs2_muB_mean_std_scale_ave.dat"
 gw170817_file: "../constraints/LV/LV_prior.h5"
 ```
 
+## Phase transitions and EOSext
+
+If phase transitions are enabled, the EOS sampler stores the usual EOS table with the first-order transition included in the group:
+
+```text
+/<eos_index>/EOS
+```
+
+An optional auxiliary table can also be written to:
+
+```text
+/<eos_index>/EOSext
+```
+
+This table is controlled by:
+
+```yaml
+include_phase_transition: true
+write_eos_extension: true
+eos_extension_max_delta_mu_mev: 500.0
+```
+
+`EOSext` is constructed only by the `EOS` executable. The `TOV` executable reads the ordinary `/EOS` table and does not create or modify `/EOSext`.
+
+The `EOSext` table contains the already constructed low-density EOS up to the left side of the phase transition. It then continues the last pre-transition sound-speed segment to larger chemical potential. The continuation stops at the first of the following conditions:
+
+- the extrapolated sound speed reaches `cs2 = 1`,
+- the extrapolated sound speed would reach `cs2 = 0`,
+- the extension reaches `eos_extension_max_delta_mu_mev`.
+
+The default maximum extension length is `500 MeV`. If the sound speed reaches `cs2 = 1`, the endpoint is finite and may be written. If the sound speed would reach `cs2 = 0`, the code stops before appending a singular point, because the density evolution contains the factor `1 / cs2`.
+
+`EOSext` is intended as an auxiliary diagnostic/output table. It is not used by the TOV solver unless the TOV code is explicitly modified to read it.
+
 ## Building
 
 From the project root:
@@ -131,11 +165,12 @@ build/TOV
 For debugging, use:
 
 ```bash
+rm -rf build
 cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug
 cmake --build build -j
 ```
 
-Release mode is strongly recommended for performance.
+Release mode is recommended for production runs.
 
 ## Running
 
@@ -146,7 +181,9 @@ cd build
 mpirun -np 1 ./EOS ../config/default.yaml 12345
 ```
 
-This creates `0.h5` for rank 0. For multiple ranks:
+The final argument is the random seed. This creates `0.h5` for rank 0.
+
+For multiple ranks:
 
 ```bash
 mpirun -np 2 ./EOS ../config/default.yaml 12345
@@ -165,7 +202,7 @@ Then run the TOV stage with the same number of ranks:
 mpirun -np 2 ./TOV ../config/default.yaml
 ```
 
-The TOV executable opens the existing HDF5 files, reads each EOS table, solves the TOV sequence, evaluates likelihoods, and writes the results back into the same files.
+The TOV executable opens the existing HDF5 files, reads each `/EOS` table, solves the TOV sequence, evaluates likelihoods, and writes the results back into the same files.
 
 ## HDF5 output schema
 
@@ -186,7 +223,13 @@ Each group contains:
 /<eos_index>/params
 ```
 
-The EOS datasets are:
+If `write_eos_extension: true` and a phase transition is present, the group also contains:
+
+```text
+/<eos_index>/EOSext
+```
+
+The ordinary EOS datasets are:
 
 ```text
 /<eos_index>/EOS/e
@@ -194,6 +237,16 @@ The EOS datasets are:
 /<eos_index>/EOS/n
 /<eos_index>/EOS/mu
 /<eos_index>/EOS/cs2
+```
+
+The optional EOS extension datasets are:
+
+```text
+/<eos_index>/EOSext/e
+/<eos_index>/EOSext/p
+/<eos_index>/EOSext/n
+/<eos_index>/EOSext/mu
+/<eos_index>/EOSext/cs2
 ```
 
 The TOV datasets are:
@@ -237,13 +290,37 @@ Use `h5ls`:
 h5ls -r 0.h5 | head -100
 ```
 
+Check whether `EOSext` was written:
+
+```bash
+h5ls -r 0.h5 | grep EOSext
+```
+
 Check whether TOV ran successfully:
 
 ```bash
 h5ls -r 0.h5 | grep TOV
 ```
 
-If `/0/TOV` exists but contains no datasets, the TOV stage likely failed before writing results. Note that the EOS stage may create the empty `TOV` subgroup in advance.
+If `/0/TOV` exists but contains no datasets, the TOV stage likely failed before writing results. The EOS stage may create the empty `TOV` subgroup in advance.
+
+Inspect the EOS extension numerically:
+
+```bash
+python3 - <<'PY'
+import h5py
+
+with h5py.File("0.h5", "r") as f:
+    mu = f["0/EOSext/mu"][:]
+    cs2 = f["0/EOSext/cs2"][:]
+    print("EOSext length:", len(mu))
+    print("mu range [MeV]:", mu[0], "->", mu[-1])
+    print("cs2 range:", cs2.min(), "->", cs2.max())
+    print("last points:")
+    for m, c in zip(mu[-5:], cs2[-5:]):
+        print(m, c)
+PY
+```
 
 ## Plotting results
 
@@ -293,6 +370,7 @@ Inspect the output:
 
 ```bash
 h5ls -r 0.h5 | head -100
+h5ls -r 0.h5 | grep EOSext
 h5ls -r 0.h5 | grep TOV
 ```
 
@@ -314,7 +392,7 @@ If rank 1 fails immediately, check whether `1.h5` exists. The TOV executable exp
 mpirun -np 1 ./TOV ../config/default.yaml
 ```
 
-If you want to run TOV with two ranks, first generate two EOS files:
+If TOV should run with two ranks, first generate two EOS files:
 
 ```bash
 mpirun -np 2 ./EOS ../config/default.yaml 12345
@@ -323,7 +401,23 @@ mpirun -np 2 ./TOV ../config/default.yaml
 
 ### Empty TOV group
 
-An empty `TOV` subgroup usually means TOV failed before writing datasets. Rebuild with the improved exception printout and check the rank-specific error message.
+An empty `TOV` subgroup usually means TOV failed before writing datasets. Rebuild in `Debug` mode or keep `verbose: true` and check the rank-specific error message.
+
+### Missing EOSext group
+
+If `/EOSext` is missing, check:
+
+```yaml
+include_phase_transition: true
+write_eos_extension: true
+eos_extension_max_delta_mu_mev: 500.0
+```
+
+Also make sure the `EOS` executable was rerun after changing the code or config. The `TOV` executable does not create `/EOSext`.
+
+### Short EOSext continuation
+
+A short continuation is not necessarily an error. The extension stops before the configured maximum if the extrapolated sound speed reaches `cs2 = 1` or would reach `cs2 = 0`.
 
 ### Duplicate pressure values
 
