@@ -434,38 +434,6 @@ void append_row_to_extension(EOSSample& sample,
     sample.cs2_ext.push_back(cs2);
 }
 
-bool valid_extension_vectors(const EOSSample& sample) {
-    const std::size_t n = sample.e_ext.size();
-    
-    if (n < 2) return false;
-
-    if (sample.p_ext.size() != n || sample.n_ext.size() != n ||
-        sample.mu_ext.size() != n || sample.cs2_ext.size() != n) {
-        return false;
-    }
-
-    for (std::size_t i = 0; i < n; ++i) {
-        if (!is_finite(sample.e_ext[i]) || !is_finite(sample.p_ext[i]) ||
-            !is_finite(sample.n_ext[i]) || !is_finite(sample.mu_ext[i]) ||
-            !is_finite(sample.cs2_ext[i])) {
-            return false;
-        }
-
-        if (sample.e_ext[i] <= 0.0 || sample.p_ext[i] < 0.0 ||
-            sample.n_ext[i] <= 0.0) {
-            return false;
-        }
-    }
-
-    for (std::size_t i = 1; i < n; ++i) {
-        if (!(sample.e_ext[i] > sample.e_ext[i - 1])) return false;
-        if (sample.p_ext[i] < sample.p_ext[i - 1]) return false;
-        if (!(sample.mu_ext[i] > sample.mu_ext[i - 1])) return false;
-    }
-
-    return true;
-}
-
 bool valid_eos_vectors(const EOSSample& sample) {
     const std::size_t n = sample.e.size();
 
@@ -728,22 +696,16 @@ EOSSample make_candidate(
     if (cfg.write_eos_extension && cfg.include_phase_transition && pt_left_row_index >= 0) {
 
         for (int i = 0; i <= pt_left_row_index; ++i) {
+            const Row& row = rows[static_cast<std::size_t>(i)];
+
             append_row_to_extension(
                 sample,
-                rows[static_cast<std::size_t>(i)].e,
-                rows[static_cast<std::size_t>(i)].p,
-                rows[static_cast<std::size_t>(i)].n,
-                rows[static_cast<std::size_t>(i)].mu,
-                rows[static_cast<std::size_t>(i)].cs2
+                row.e,
+                row.p,
+                row.n,
+                row.mu,
+                row.cs2
             );
-        }
-
-        if (!valid_extension_vectors(sample)) {
-            sample.e_ext.clear();
-            sample.p_ext.clear();
-            sample.n_ext.clear();
-            sample.mu_ext.clear();
-            sample.cs2_ext.clear();
         }
     }
 
@@ -808,7 +770,11 @@ void create_and_write_sample(hid_t file_id, int accepted, const EOSSample& sampl
     
     hid_t eosext_group = -1;
     if (cfg.write_eos_extension && cfg.include_phase_transition && !sample.e_ext.empty()) {
-        hdf5::create_subgroup(group_id, std::string(schema::eos_ext_group));
+            eosext_group = hdf5::create_subgroup(
+            group_id,
+            std::string(schema::eos_ext_group)
+        );
+
         const hsize_t len_ext = static_cast<hsize_t>(sample.e_ext.size());
 
         hdf5::create_dataset_double(eosext_group, "e", len_ext);
@@ -923,6 +889,13 @@ int run_eos_sampler(const Config& cfg, unsigned int seed) {
 
             if (sample.e.empty()) {
                 continue;
+            }
+
+            if (cfg.verbose) {
+                std::cout << "accepted EOS " << accepted
+                << ": EOS size=" << sample.e.size()
+                << ", EOSext size=" << sample.e_ext.size()
+                << '\n';
             }
 
             create_and_write_sample(file_id, accepted, sample, cfg);
