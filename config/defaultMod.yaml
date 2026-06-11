@@ -1,0 +1,99 @@
+# config/default.yaml
+
+# Output
+output_prefix: "./"
+file_start_index: 0
+n_eos: 100
+verbose: true
+
+# EOS sampling
+n_mu: 10
+n_mu_pqcd: 2
+n_cs2: 300
+# Number of sampled low-density c_s^2 bridge points between crust and n_cet.
+n_low_cs2: 4
+low_cs2_end_min: 0.001
+low_cs2_end_max: 0.1
+n_pqcd: 3
+
+include_phase_transition: true
+impose_pqcd: true
+pqcd_cs2_condition: true
+sample_cmax: false
+
+cmin: 1.0e-10
+cmax: 1.0
+
+n_cet: 1.1
+# These are currently inactive after removing the polytropic bridge.
+p_cet_soft: 1.
+p_cet_stiff: 20.
+
+n_qcd: 40.0
+mu_qcd: 2.6
+mu_cs2_cond: 2.25
+dp_qcd: 5.0
+dn_qcd: 0.25
+
+n_pt_min_nsat: 2.0
+n_pt_max_nsat: 7.0
+dn_min_nsat: 0.1
+dn_max_nsat: 2.0
+
+# Input files
+crust_eos_file: "../crust/BPS2.txt"
+n_crust: 77
+
+ceft_file: "../ceft/ceft2NLO_1.1ns.dat"
+n_ceft: 25
+
+pqcd_file: "../pQCD/cs2_muB_mean_std_scale_ave.dat"
+n_pqcd_file: 100
+
+# TOV
+n_tov: 200
+n_radial: 2000
+pc_initial: 5.0
+pc_step: 0.5
+p_surface_cut: 1.0e-16
+r_initial: 1.0e-5
+r_final: 18.0
+
+mtov_min: 2.0
+mtov_max: 10.0
+
+# TOV likelihoods
+enable_mass_likelihood: true
+enable_gw_likelihood: true
+enable_xray_likelihoods: true
+
+pulsar_mass_mu: 1.908
+pulsar_mass_sigma: 0.016
+chirp_mass: 1.186
+mass_likelihood_points: 200
+
+# NICER
+nicer0030_file: "../constraints/mrdata/nicer_J0030/0030_maryland_2spts_regrid2.h5"
+nicer0437_file: "../constraints/mrdata/nicer_J0437/J0437_regrid_new.h5"
+nicer0740_file: "../constraints/mrdata/nicer_J0740_update/J0740_update_regrid_new.h5"
+nicer0614_file: "../constraints/mrdata/nicer_J0614/J0614_regrid_new.h5"
+
+# X-ray
+nat17_file: "../constraints/mrdata/nat17/1702_D_X_int.o2"
+nks1724b_file: "../constraints/mrdata/nks15/1724b.o2"
+nks1810b_file: "../constraints/mrdata/nks15/1810b.o2"
+
+shsM13_file: "../constraints/mrdata/shs18/M13_H_rs.o2"
+
+shb6304_file: "../constraints/mrdata/shb18/6304_He_nopl_syst_wilm.o2"
+shb6397_file: "../constraints/mrdata/shb18/6397_He_syst_wilm3.o2"
+shbM28_file: "../constraints/mrdata/shb18/M28_He_syst_wilm.o2"
+shbM30_file: "../constraints/mrdata/shb18/M30_H_syst_wilm.o2"
+shbX7_file: "../constraints/mrdata/shb18/X7_H_syst_wilm.o2"
+shbX5_file: "../constraints/mrdata/shb18/X5_H_syst_wilm.o2"
+shbwCen_file: "../constraints/mrdata/shb18/wCen_H_syst_wilm.o2"
+
+shb_dataset: "rescaled/data/like"
+
+# GW170817
+gw170817_file: "../constraints/LV/LV_prior.h5"
