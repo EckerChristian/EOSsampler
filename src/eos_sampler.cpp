@@ -436,6 +436,8 @@ void append_row_to_extension(EOSSample& sample,
 
 bool valid_extension_vectors(const EOSSample& sample) {
     const std::size_t n = sample.e_ext.size();
+    
+    if (n < 2) return false;
 
     if (sample.p_ext.size() != n || sample.n_ext.size() != n ||
         sample.mu_ext.size() != n || sample.cs2_ext.size() != n) {
@@ -723,116 +725,25 @@ EOSSample make_candidate(
         }
     }
     
-    if (cfg.include_phase_transition && pt_left_row_index > 0) {
-        const double mu_left = rows[static_cast<std::size_t>(pt_left_row_index - 1)].mu / 1000.0;
-        const double cs2_left = rows[static_cast<std::size_t>(pt_left_row_index - 1)].cs2;
-        const double dmu_left = muPT - mu_left;
+    if (cfg.write_eos_extension && cfg.include_phase_transition && pt_left_row_index >= 0) {
 
-        if (dmu_left > 0.0 && cs2PTl > 0.0 && cs2PTl < 1.0) {
-            const double slope = (cs2PTl - cs2_left) / dmu_left;
-            double mu_stop = cfg.mu_qcd;
+        for (int i = 0; i <= pt_left_row_index; ++i) {
+            append_row_to_extension(
+                sample,
+                rows[static_cast<std::size_t>(i)].e,
+                rows[static_cast<std::size_t>(i)].p,
+                rows[static_cast<std::size_t>(i)].n,
+                rows[static_cast<std::size_t>(i)].mu,
+                rows[static_cast<std::size_t>(i)].cs2
+            );
+        }
 
-            if (slope > 0.0) {
-                const double mu_causal = muPT + (1.0 - cs2PTl) / slope;
-                if (mu_causal > muPT) {
-                    mu_stop = std::min(mu_stop, mu_causal);
-                }
-            } else if (slope < 0.0) {
-                const double mu_zero = muPT - cs2PTl / slope;
-                if (mu_zero > muPT) {
-                    mu_stop = std::min(mu_stop, mu_zero);
-                }
-            }
-
-            if (mu_stop > muPT) {
-                for (int i = 0; i <= pt_left_row_index; ++i) {
-                    append_row_to_extension(
-                        sample,
-                        rows[static_cast<std::size_t>(i)].e,
-                        rows[static_cast<std::size_t>(i)].p,
-                        rows[static_cast<std::size_t>(i)].n,
-                        rows[static_cast<std::size_t>(i)].mu,
-                        rows[static_cast<std::size_t>(i)].cs2
-                    );
-                }
-
-                double mu_prev = muPT;
-                double n_prev = sample.nPTl;
-                double p_prev = sample.pPT;
-                const double step = std::max(dmu, 1.0e-6);
-                double mu_next = muPT + step;
-
-                while (mu_next < mu_stop) {
-                    const double cs2_prev = cs2PTl + slope * (mu_prev - muPT);
-                    const double cs2_next = cs2PTl + slope * (mu_next - muPT);
-
-                    if (cs2_prev <= 0.0 || cs2_next <= 0.0 ||
-                        cs2_prev > 1.0 || cs2_next > 1.0) {
-                        break;
-                    }
-
-                    const double integrand_prev = 1.0 / (mu_prev * cs2_prev);
-                    const double integrand_next = 1.0 / (mu_next * cs2_next);
-                    const double integral = 0.5 * (integrand_prev + integrand_next) * (mu_next - mu_prev);
-
-                    const double n_next = n_prev * std::exp(integral);
-                    const double p_next =p_prev + 0.5 * (n_prev + n_next) * (mu_next - mu_prev) * 1000.0;
-                    const double e_next = -p_next + mu_next * 1000.0 * n_next;
-
-                    append_row_to_extension(
-                        sample,
-                        e_next,
-                        p_next,
-                        n_next,
-                        mu_next * 1000.0,
-                        cs2_next
-                    );
-
-                    mu_prev = mu_next;
-                    n_prev = n_next;
-                    p_prev = p_next;
-                    mu_next += step;
-                }
-
-                if (mu_prev < mu_stop) {
-                    const double cs2_prev = cs2PTl + slope * (mu_prev - muPT);
-                    const double cs2_next = cs2PTl + slope * (mu_stop - muPT);
-
-                    if (cs2_prev > 0.0 && cs2_prev <= 1.0 &&
-                        cs2_next > 0.0 && cs2_next <= 1.0) {
-                        const double integrand_prev = 1.0 / (mu_prev * cs2_prev);
-                        const double integrand_next = 1.0 / (mu_stop * cs2_next);
-                        const double integral =0.5 * (integrand_prev + integrand_next) * (mu_stop - mu_prev);
-
-                        const double n_next = n_prev * std::exp(integral);
-                        const double p_next =p_prev + 0.5 * (n_prev + n_next) * (mu_stop - mu_prev) * 1000.0;
-                        const double e_next = -p_next + mu_stop * 1000.0 * n_next;
-
-                        append_row_to_extension(
-                            sample,
-                            e_next,
-                            p_next,
-                            n_next,
-                            mu_stop * 1000.0,
-                            cs2_next
-                        );
-                    }
-                }
-
-                if (!valid_extension_vectors(sample)) {
-                    //std::cout << "EOSext failed validation: "
-                    //<< "size=" << sample.e_ext.size()
-                    //<< ", PTpoint=" << PTpoint
-                    //<< ", pt_left_row_index=" << pt_left_row_index
-                    //<< ", muPT=" << muPT
-                    //<< '\n';
-                    sample.e_ext.clear();
-                    sample.p_ext.clear();
-                    sample.n_ext.clear();
-                    sample.mu_ext.clear();
-                    sample.cs2_ext.clear();
-                }
-            }
+        if (!valid_extension_vectors(sample)) {
+            sample.e_ext.clear();
+            sample.p_ext.clear();
+            sample.n_ext.clear();
+            sample.mu_ext.clear();
+            sample.cs2_ext.clear();
         }
     }
 
@@ -874,7 +785,8 @@ EOSSample make_candidate(
     return sample;
 }
 
-void create_and_write_sample(hid_t file_id, int accepted, const EOSSample& sample) {
+
+void create_and_write_sample(hid_t file_id, int accepted, const EOSSample& sample, const Config& cfg) {
     hid_t group_id = hdf5::create_group(file_id, accepted);
     hid_t eos_group = hdf5::create_subgroup(group_id, std::string(schema::eos_group));
     hid_t tov_group = hdf5::create_subgroup(group_id, std::string(schema::tov_group));
@@ -895,8 +807,8 @@ void create_and_write_sample(hid_t file_id, int accepted, const EOSSample& sampl
     hdf5::write_double_array(eos_group, "cs2", sample.cs2);
     
     hid_t eosext_group = -1;
-    if (!sample.e_ext.empty()) {
-        eosext_group = hdf5::create_subgroup(group_id, "EOSext");
+    if (cfg.write_eos_extension && cfg.include_phase_transition && !sample.e_ext.empty()) {
+        hdf5::create_subgroup(group_id, std::string(schema::eos_ext_group));
         const hsize_t len_ext = static_cast<hsize_t>(sample.e_ext.size());
 
         hdf5::create_dataset_double(eosext_group, "e", len_ext);
@@ -1013,7 +925,7 @@ int run_eos_sampler(const Config& cfg, unsigned int seed) {
                 continue;
             }
 
-            create_and_write_sample(file_id, accepted, sample);
+            create_and_write_sample(file_id, accepted, sample, cfg);
 
             ++accepted;
 

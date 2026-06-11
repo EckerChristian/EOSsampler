@@ -121,6 +121,7 @@ Config load_config(const std::string& path) {
     set_number(values, "n_pqcd", cfg.n_pqcd);
 
     set_bool(values, "include_phase_transition", cfg.include_phase_transition);
+    set_bool(values, "write_eos_extension", cfg.write_eos_extension);
     set_bool(values, "impose_pqcd", cfg.impose_pqcd);
     set_bool(values, "pqcd_cs2_condition", cfg.pqcd_cs2_condition);
     set_bool(values, "sample_cmax", cfg.sample_cmax);

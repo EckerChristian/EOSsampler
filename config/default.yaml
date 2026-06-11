@@ -14,6 +14,7 @@ n_poly: 8
 n_pqcd: 3
 
 include_phase_transition: true
+write_eos_extension: true
 impose_pqcd: true
 pqcd_cs2_condition: true
 sample_cmax: false

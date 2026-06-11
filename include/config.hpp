@@ -17,6 +17,7 @@ struct Config {
     int n_pqcd = 3;
 
     bool include_phase_transition = true;
+    bool write_eos_extension = false;
     bool impose_pqcd = true;
     bool pqcd_cs2_condition = true;
     bool sample_cmax = false;

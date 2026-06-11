@@ -6,6 +6,7 @@
 namespace eos::schema {
 
 inline constexpr std::string_view eos_group = "EOS";
+inline constexpr std::string_view eos_ext_group = "EOSext";
 inline constexpr std::string_view tov_group = "TOV";
 inline constexpr std::string_view params_group = "params";
 
@@ -16,6 +17,14 @@ inline constexpr std::array<std::string_view, 3> subgroups = {
 };
 
 inline constexpr std::array<std::string_view, 5> eos_datasets = {
+    "e",
+    "p",
+    "n",
+    "mu",
+    "cs2"
+};
+
+inline constexpr std::array<std::string_view, 5> eos_ext_datasets = {
     "e",
     "p",
     "n",
