@@ -426,6 +426,7 @@ TOVSequence solve_sequence(const EOSTable& eos_table, const Config& cfg, const T
     seq.radius.reserve(static_cast<std::size_t>(cfg.n_tov));
     seq.lambda.reserve(static_cast<std::size_t>(cfg.n_tov));
     seq.e_cent.reserve(static_cast<std::size_t>(cfg.n_tov));
+    seq.p_cent.reserve(static_cast<std::size_t>(cfg.n_tov));
     seq.mu_cent.reserve(static_cast<std::size_t>(cfg.n_tov));
     seq.n_cent.reserve(static_cast<std::size_t>(cfg.n_tov));
     seq.cs2_cent.reserve(static_cast<std::size_t>(cfg.n_tov));
@@ -493,6 +494,7 @@ TOVSequence solve_sequence(const EOSTable& eos_table, const Config& cfg, const T
         seq.radius.push_back(surface_r);
         seq.lambda.push_back(lambda);
         seq.e_cent.push_back(ec / MeVbyfm3ToGev4);
+        seq.p_cent.push_back(pc / MeVbyfm3ToGev4);
         seq.mu_cent.push_back(mu_from_energy(ec, eos_table));
         seq.n_cent.push_back(number_from_energy(ec, eos_table));
         seq.cs2_cent.push_back(cs2_from_energy(ec, eos_table));
@@ -552,6 +554,7 @@ void write_tov_sequence(hid_t group_id, const TOVSequence& seq) {
     hdf5::recreate_dataset_double(tov_group, "Lambda", len);
     hdf5::recreate_dataset_double(tov_group, "stab", len);
     hdf5::recreate_dataset_double(tov_group, "e_cent", len);
+    hdf5::recreate_dataset_double(tov_group, "p_cent", len);
     hdf5::recreate_dataset_double(tov_group, "mu_cent", len);
     hdf5::recreate_dataset_double(tov_group, "n_cent", len);
     hdf5::recreate_dataset_double(tov_group, "cs2_cent", len);
@@ -562,6 +565,7 @@ void write_tov_sequence(hid_t group_id, const TOVSequence& seq) {
     hdf5::write_double_array(tov_group, "Lambda", seq.lambda);
     hdf5::write_double_array(tov_group, "stab", seq.stability);
     hdf5::write_double_array(tov_group, "e_cent", seq.e_cent);
+    hdf5::write_double_array(tov_group, "p_cent", seq.p_cent);
     hdf5::write_double_array(tov_group, "mu_cent", seq.mu_cent);
     hdf5::write_double_array(tov_group, "n_cent", seq.n_cent);
     hdf5::write_double_array(tov_group, "cs2_cent", seq.cs2_cent);

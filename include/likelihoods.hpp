@@ -12,6 +12,7 @@ struct TOVSequence {
     std::vector<double> lambda;
     std::vector<double> stability;
     std::vector<double> e_cent;
+    std::vector<double> p_cent;
     std::vector<double> mu_cent;
     std::vector<double> n_cent;
     std::vector<double> cs2_cent;
