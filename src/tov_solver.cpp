@@ -15,6 +15,7 @@
 #include <stdexcept>
 #include <string>
 #include <vector>
+#include <string_view>
 
 namespace eos {
 namespace {
@@ -392,8 +393,11 @@ double max_stable_mass(const TOVSequence& seq) {
     return mtov;
 }
 
-EOSTable read_eos_table(hid_t group_id) {
-    hid_t eos_group = hdf5::open_subgroup(group_id, std::string(schema::eos_group));
+EOSTable read_eos_table(hid_t group_id, std::string_view eos_group_name){
+    hid_t eos_group = hdf5::open_subgroup(
+        group_id,
+        std::string(eos_group_name)
+    );
 
     EOSTable tab;
     tab.e = hdf5::read_double_array(eos_group, "e");
@@ -420,7 +424,12 @@ EOSTable read_eos_table(hid_t group_id) {
     return tab;
 }
 
-TOVSequence solve_sequence(const EOSTable& eos_table, const Config& cfg, const TransitionInfo& transition) {
+TOVSequence solve_sequence(
+    const EOSTable& eos_table,
+    const Config& cfg, 
+    const TransitionInfo& transition,
+    bool stop_at_table_max_pressure = false
+    ) {
     TOVSequence seq;
     seq.mass.reserve(static_cast<std::size_t>(cfg.n_tov));
     seq.radius.reserve(static_cast<std::size_t>(cfg.n_tov));
@@ -441,6 +450,8 @@ TOVSequence solve_sequence(const EOSTable& eos_table, const Config& cfg, const T
     for (int k = 0; k < cfg.n_tov; ++k) {
         if (k > 0) pc += dpc;
         if (pc <= 0.0) continue;
+
+        if (stop_at_table_max_pressure && pc > eos_table.p.back()) {break;}
 
         const double ec = energy_from_pressure(pc, eos_table);
         if (!finite(ec) || ec <= 0.0) break;
@@ -539,12 +550,12 @@ TransitionInfo read_transition_info(hid_t group_id) {
     return transition;
 }
 
-void write_tov_sequence(hid_t group_id, const TOVSequence& seq) {
+void write_tov_sequence(hid_t group_id, std::string_view tov_group_name, const TOVSequence& seq) {
     hid_t tov_group;
-    if (hdf5::link_exists(group_id, std::string(schema::tov_group))) {
-        tov_group = hdf5::open_subgroup(group_id, std::string(schema::tov_group));
+    if (hdf5::link_exists(group_id, std::string(tov_group_name))) {
+        tov_group = hdf5::open_subgroup(group_id, std::string(tov_group_name));
     } else {
-        tov_group = hdf5::create_subgroup(group_id, std::string(schema::tov_group));
+        tov_group = hdf5::create_subgroup(group_id, std::string(tov_group_name));
     }
 
     const hsize_t len = static_cast<hsize_t>(seq.mass.size());
@@ -645,12 +656,34 @@ int run_tov_solver(const Config& cfg) {
             }
 
             hid_t group_id = hdf5::open_group(file_id, eos_index);
-            EOSTable eos_table = read_eos_table(group_id);
 
+            EOSTable eos_table = read_eos_table(group_id, schema::eos_group);
+            
             const TransitionInfo transition = read_transition_info(group_id);
+            
             TOVSequence seq = solve_sequence(eos_table, cfg, transition);
-            write_tov_sequence(group_id, seq);
+            
+            write_tov_sequence(group_id, schema::tov_group, seq);
             write_likelihoods(group_id, seq, likelihood_evaluator);
+
+            if (hdf5::link_exists(group_id, std::string(schema::eos_ext_group))) {
+
+                EOSTable eos_ext_table = read_eos_table(group_id, schema::eos_ext_group);
+
+                const TransitionInfo no_transition;
+
+                TOVSequence seq_ext = solve_sequence(eos_ext_table, cfg, no_transition, true);
+
+                write_tov_sequence(group_id, schema::tov_ext_group, seq_ext);
+
+                if (cfg.verbose) {
+                    std::cout << "rank=" << rank
+                              << ", EOS=" << eos_index
+                              << ", TOVext points=" << seq_ext.mass.size()
+                              << ", TOVext Mtov=" << max_stable_mass(seq_ext)
+                              << '\n';
+                }
+            }
 
             if (cfg.verbose) {
                 BranchInfo branches = find_branches(seq);
