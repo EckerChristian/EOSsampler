@@ -40,6 +40,18 @@ struct PQCDTable {
     std::vector<double> cs2_std;
 };
 
+struct LowDensityChain {
+    std::vector<double> e;
+    std::vector<double> p;
+    std::vector<double> n;
+    std::vector<double> mu;
+    std::vector<double> cs2;
+
+    double p_cet = 0.0;
+    double mu_cet_mev = 0.0;
+    double cs2_cet = 0.0;
+};
+
 struct EOSSample {
     // EOS that includes the PT
     std::vector<double> e;
@@ -171,30 +183,6 @@ double uniform(std::mt19937& rng, double lo, double hi) {
     return dist(rng);
 }
 
-double linear_interp(
-    double x,
-    const std::vector<double>& xs,
-    const std::vector<double>& ys
-) {
-    if (xs.size() != ys.size() || xs.size() < 2) {
-        throw std::runtime_error("Invalid interpolation table");
-    }
-
-    if (x <= xs.front()) return ys.front();
-    if (x >= xs.back()) return ys.back();
-
-    for (std::size_t i = 0; i + 1 < xs.size(); ++i) {
-        if (x >= xs[i] && x <= xs[i + 1]) {
-            const double dx = xs[i + 1] - xs[i];
-            if (dx == 0.0) return ys[i];
-            const double t = (x - xs[i]) / dx;
-            return (1.0 - t) * ys[i] + t * ys[i + 1];
-        }
-    }
-
-    return ys.back();
-}
-
 // pQCD running of alpha_s, N3LO.
 double alpha_s(double lbar) {
     const double L = 2.0 * std::log(lbar / LMSbar);
@@ -233,6 +221,7 @@ double Dbeta2_das_func_X_lbar(double lbar, double as) {
             + 4.0 * std::pow(as / 4.0 / pi, 3.0) * beta2) /
            lbar;
 }
+
 
 double pressure_qcd(double mub, double X) {
     const double lbar = 2.0 * (mub / 3.0) * X;
@@ -595,6 +584,175 @@ void extend_last_sound_speed_segment(
     }
 }
 
+LowDensityChain make_low_density_cs2_chain(
+    const Config& cfg,
+    const CrustTable& crust,
+    std::mt19937& rng
+) {
+    LowDensityChain chain;
+
+    const double n_left = crust.n_over_ns.back() * ns;
+    const double p_left = crust.p.back();
+    const double mu_left = crust.mu.back();
+
+    const double n_right = cfg.n_cet * ns;
+
+    if (n_right <= n_left) {
+        return chain;
+    }
+
+    const int n_nodes = cfg.n_low_cs2;
+    std::vector<double> cs2_nodes(n_nodes);
+
+    const double cs2_cet = uniform(rng, cfg.cs2_cet_min, cfg.cs2_cet_max);
+
+    if (cfg.low_cs2_monotonic) {
+        for (int i = 0; i < n_nodes - 1; ++i) {
+            cs2_nodes[i] = uniform(rng, cfg.cmin, cs2_cet);
+        }
+        std::sort(cs2_nodes.begin(), cs2_nodes.end() - 1);
+        cs2_nodes[n_nodes - 1] = cs2_cet;
+    } else {
+        for (int i = 0; i < n_nodes - 1; ++i) {
+            cs2_nodes[i] = uniform(rng, cfg.cmin, cfg.low_cs2_max);
+        }
+        cs2_nodes[n_nodes - 1] = cs2_cet;
+    }
+
+    double n_prev = n_left;
+    double p_prev = p_left;
+    double mu_prev = mu_left;
+
+    for (int i = 0; i < n_nodes; ++i) {
+        const double n_now =
+            n_left + (i + 1) * (n_right - n_left) / static_cast<double>(n_nodes);
+
+        const double cs2_prev = (i == 0) ? crust.cs2.back() : cs2_nodes[i - 1];
+        const double cs2_now = cs2_nodes[i];
+
+        const double dn_local = n_now - n_prev;
+
+        const double dlnmu =
+            0.5 * (cs2_prev / n_prev + cs2_now / n_now) * dn_local;
+
+        const double mu_now = mu_prev * std::exp(dlnmu);
+
+        const double p_now =
+            p_prev + 0.5 * (cs2_prev * mu_prev + cs2_now * mu_now) * dn_local;
+
+        const double e_now = n_now * mu_now - p_now;
+
+        if (!is_finite(mu_now) || !is_finite(p_now) || !is_finite(e_now)) {
+            return LowDensityChain{};
+        }
+
+        chain.n.push_back(n_now);
+        chain.p.push_back(p_now);
+        chain.e.push_back(e_now);
+        chain.mu.push_back(mu_now);
+        chain.cs2.push_back(cs2_now);
+
+        n_prev = n_now;
+        p_prev = p_now;
+        mu_prev = mu_now;
+    }
+
+    chain.p_cet = chain.p.back();
+    chain.mu_cet_mev = chain.mu.back();
+    chain.cs2_cet = chain.cs2.back();
+
+    return chain;
+}
+
+double pressure_from_low_density_chain_at_n(
+    double n_query,
+    const CrustTable& crust,
+    const LowDensityChain& low_density
+) {
+    if (low_density.n.empty()) {
+        return std::numeric_limits<double>::quiet_NaN();
+    }
+
+    const double n_crust = crust.n_over_ns.back() * ns;
+    const double p_crust = crust.p.back();
+
+    if (n_query <= n_crust) {
+        return p_crust;
+    }
+
+    if (n_query >= low_density.n.back()) {
+        return low_density.p.back();
+    }
+
+    double n_left = n_crust;
+    double p_left = p_crust;
+
+    for (std::size_t i = 0; i < low_density.n.size(); ++i) {
+        const double n_right = low_density.n[i];
+        const double p_right = low_density.p[i];
+
+        if (n_query <= n_right) {
+            const double dn = n_right - n_left;
+            if (dn <= 0.0) {
+                return std::numeric_limits<double>::quiet_NaN();
+            }
+
+            const double t = (n_query - n_left) / dn;
+            return (1.0 - t) * p_left + t * p_right;
+        }
+
+        n_left = n_right;
+        p_left = p_right;
+    }
+
+    return low_density.p.back();
+}
+
+double ceft_likelihood_up_to_n_cet(
+    const Config& cfg,
+    const CrustTable& crust,
+    const CEFTTable& ceft,
+    const LowDensityChain& low_density
+) {
+    if (low_density.n.empty()) {
+        return 1.0;
+    }
+
+    const double n_min = crust.n_over_ns.back() * ns;
+    const double n_max = cfg.n_cet * ns;
+
+    double accum = 0.0;
+    int count = 0;
+
+    for (std::size_t i = 0; i < ceft.n.size(); ++i) {
+        const double n_eval = ceft.n[i];
+
+        if (n_eval <= n_min || n_eval > n_max) {
+            continue;
+        }
+
+        const double sig = ceft.sigma_p[i];
+        if (sig <= 0.0 || !is_finite(sig)) {
+            continue;
+        }
+
+        const double p_model =
+            pressure_from_low_density_chain_at_n(n_eval, crust, low_density);
+
+        if (!is_finite(p_model)) {
+            continue;
+        }
+
+        accum += std::exp(
+            -std::pow(p_model - ceft.median_p[i], 2.0) /
+            (2.0 * std::pow(sig, 2.0))
+        );
+
+        ++count;
+    }
+
+    return count > 0 ? accum / static_cast<double>(count) : 1.0;
+}
 
 EOSSample make_candidate(
     const Config& cfg,
@@ -613,21 +771,13 @@ EOSSample make_candidate(
     std::vector<double> n_boundary(n_mu_points, 0.0);
     std::vector<double> p_boundary(n_mu_points, 0.0);
 
-    const double eCrust = crust.e.back();
-    const double pCrust = crust.p.back();
-    const double nCrust = crust.n_over_ns.back();
+    const LowDensityChain low = make_low_density_cs2_chain(cfg, crust, rng);
+    if (low.e.empty()) return sample;
 
     n_boundary[0] = cfg.n_cet;
-    p_boundary[0] = uniform(rng, cfg.p_cet_soft, cfg.p_cet_stiff);
-
-    const double gamma = std::log(pCrust / p_boundary[0]) / std::log(nCrust / n_boundary[0]);
-    m[0] =
-        (p_boundary[0]
-         + ((eCrust - (pCrust / (gamma - 1.0))) * (n_boundary[0] / nCrust)
-            + (p_boundary[0] / (gamma - 1.0)))) /
-        (n_boundary[0] * ns) / 1000.0;
-
-    cseg[0] = gamma / (1.0 + ((1000.0 * m[0] * n_boundary[0] * ns - p_boundary[0]) / p_boundary[0]));
+    p_boundary[0] = low.p_cet;
+    m[0] = low.mu_cet_mev / 1000.0;
+    cseg[0] = low.cs2_cet;
 
     n_boundary[cfg.n_mu] = cfg.n_qcd;
     m[cfg.n_mu] = cfg.mu_qcd;
@@ -753,38 +903,28 @@ EOSSample make_candidate(
         });
     }
 
-    double pCET_accum = 0.0;
-    for (int i = 0; i < cfg.n_poly; ++i) {
-        const double n_ratio = nCrust + (i + 1) * ((n_boundary[0] - nCrust) / (cfg.n_poly + 1.0));
-        const double e_poly =
-            (eCrust - (pCrust / (gamma - 1.0))) * (n_ratio / nCrust)
-            + (pCrust * std::pow(n_ratio / nCrust, gamma)) / (gamma - 1.0);
-        const double p_poly = pCrust * std::pow(n_ratio / nCrust, gamma);
-        const double n_poly = n_ratio * ns;
-        const double mu_poly = (e_poly + p_poly) / n_poly;
-        const double cs2_poly =
-            gamma /
-            (1.0 +
-             (((eCrust - (pCrust / (gamma - 1.0))) * (n_ratio / nCrust)
-               + (pCrust * std::pow(n_ratio / nCrust, gamma)) / (gamma - 1.0)) /
-              (pCrust * std::pow(n_ratio / nCrust, gamma))));
+    sample.pCET = ceft_likelihood_up_to_n_cet(
+        cfg,
+        crust,
+        ceft,
+        low
+    );
 
-        const double med = linear_interp(n_poly, ceft.n, ceft.median_p);
-        const double sig = linear_interp(n_poly, ceft.n, ceft.sigma_p);
-        if (sig > 0.0) {
-            pCET_accum += std::exp(-std::pow(p_poly - med, 2.0) / (2.0 * std::pow(sig, 2.0)));
-        }
-
-        rows.push_back({e_poly, p_poly, n_poly, mu_poly, cs2_poly});
+    for (std::size_t i = 0; i < low.e.size(); ++i) {
+        rows.push_back({
+            low.e[i],
+            low.p[i],
+            low.n[i],
+            low.mu[i],
+            low.cs2[i]
+        });
     }
-
-    sample.pCET = cfg.n_poly > 0 ? pCET_accum / static_cast<double>(cfg.n_poly) : 1.0;
 
     const double dmu = (m[cfg.n_mu] - m[0]) / static_cast<double>(cfg.n_cs2 - 1);
     int icrit = cfg.include_phase_transition ? static_cast<int>(std::floor((muPT - m[0]) / dmu)) : -1000;
     icrit = std::clamp(icrit, 0, std::max(0, cfg.n_cs2 - 2));
 
-    for (int i = 0; i < cfg.n_cs2; ++i) {
+    for (int i = 1; i < cfg.n_cs2; ++i) {
         double mNow = m[0] + i * (m[cfg.n_mu] - m[0]) / static_cast<double>(cfg.n_cs2 - 1);
         if (cfg.include_phase_transition && (i == icrit || i == icrit + 1)) {
             mNow = muPT;

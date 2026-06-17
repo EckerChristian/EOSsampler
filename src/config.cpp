@@ -117,7 +117,7 @@ Config load_config(const std::string& path) {
     set_number(values, "n_mu", cfg.n_mu);
     set_number(values, "n_mu_pqcd", cfg.n_mu_pqcd);
     set_number(values, "n_cs2", cfg.n_cs2);
-    set_number(values, "n_poly", cfg.n_poly);
+    set_number(values, "n_low_cs2", cfg.n_low_cs2);
     set_number(values, "n_pqcd", cfg.n_pqcd);
 
     set_bool(values, "include_phase_transition", cfg.include_phase_transition);
@@ -131,8 +131,10 @@ Config load_config(const std::string& path) {
     set_number(values, "cmax", cfg.cmax);
 
     set_number(values, "n_cet", cfg.n_cet);
-    set_number(values, "p_cet_soft", cfg.p_cet_soft);
-    set_number(values, "p_cet_stiff", cfg.p_cet_stiff);
+    set_number(values, "cs2_cet_min", cfg.cs2_cet_min);
+    set_number(values, "cs2_cet_max", cfg.cs2_cet_max);
+    set_number(values, "low_cs2_max", cfg.low_cs2_max);
+    set_bool(values, "low_cs2_monotonic", cfg.low_cs2_monotonic);
 
     set_number(values, "n_qcd", cfg.n_qcd);
     set_number(values, "mu_qcd", cfg.mu_qcd);
@@ -164,6 +166,34 @@ Config load_config(const std::string& path) {
 
     if (cfg.n_eos <= 0) {
         throw std::runtime_error("n_eos must be positive");
+    }
+
+    if (cfg.n_low_cs2 < 1) {
+        throw std::runtime_error("n_low_cs2 must be at least 1");
+    }
+
+    if (cfg.n_cs2 < 2) {
+        throw std::runtime_error("n_cs2 must be at least 2");
+    }
+
+    if (cfg.n_cet <= 0.0) {
+        throw std::runtime_error("n_cet must be positive");
+    }
+
+    if (cfg.cs2_cet_min <= 0.0 || cfg.cs2_cet_max <= cfg.cs2_cet_min) {
+        throw std::runtime_error("cs2_cet_min and cs2_cet_max must satisfy 0 < min < max");
+    }
+
+    if (cfg.low_cs2_max <= 0.0 || cfg.low_cs2_max > 1.0) {
+        throw std::runtime_error("low_cs2_max must satisfy 0 < low_cs2_max <= 1");
+    }
+
+    if (cfg.cs2_cet_max > cfg.low_cs2_max) {
+        throw std::runtime_error("cs2_cet_max must be <= low_cs2_max");
+    }
+
+    if (cfg.cmin < 0.0 || cfg.cmin >= cfg.low_cs2_max) {
+        throw std::runtime_error("cmin must satisfy 0 <= cmin < low_cs2_max");
     }
 
     if (cfg.len_eos() <= 0) {

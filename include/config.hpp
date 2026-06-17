@@ -13,7 +13,7 @@ struct Config {
     int n_mu = 10;
     int n_mu_pqcd = 2;
     int n_cs2 = 300;
-    int n_poly = 8;
+    int n_low_cs2 = 8;
     int n_pqcd = 3;
 
     bool include_phase_transition = true;
@@ -27,8 +27,10 @@ struct Config {
     double cmax = 1.0;
 
     double n_cet = 1.1;
-    double p_cet_soft = 1.5;
-    double p_cet_stiff = 7.0;
+    double cs2_cet_min = 0.02;
+    double cs2_cet_max = 0.35;
+    double low_cs2_max = 0.6;
+    bool low_cs2_monotonic = false;
 
     double n_qcd = 40.0;
     double mu_qcd = 2.6;
@@ -65,7 +67,7 @@ struct Config {
     int n_pqcd_file = 100;
 
     int len_eos() const {
-        return n_crust + n_poly + n_cs2 + n_pqcd;
+        return n_crust + n_low_cs2 + (n_cs2 - 1) + n_pqcd;
     }
 
     // Likelihood switches.
