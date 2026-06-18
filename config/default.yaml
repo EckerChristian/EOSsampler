@@ -10,7 +10,7 @@ verbose: true
 n_mu: 10
 n_mu_pqcd: 2
 n_cs2: 300
-n_poly: 8
+n_low_cs2: 3
 n_pqcd: 3
 
 include_phase_transition: true
@@ -24,8 +24,10 @@ cmin: 1.0e-10
 cmax: 1.0
 
 n_cet: 1.1
-p_cet_soft: 1.5
-p_cet_stiff: 7.0
+cs2_cet_min: 0.01
+cs2_cet_max: 0.3
+low_cs2_max: 0.3
+low_cs2_monotonic: true
 
 n_qcd: 40.0
 mu_qcd: 2.6
