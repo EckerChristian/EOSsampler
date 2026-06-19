@@ -31,6 +31,8 @@ struct Config {
     double cs2_cet_max = 0.35;
     double low_cs2_max = 0.6;
     bool low_cs2_monotonic = false;
+    bool cs2_pt_monotonic = false;
+
 
     double n_qcd = 40.0;
     double mu_qcd = 2.6;

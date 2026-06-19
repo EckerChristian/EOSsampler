@@ -135,6 +135,8 @@ Config load_config(const std::string& path) {
     set_number(values, "cs2_cet_max", cfg.cs2_cet_max);
     set_number(values, "low_cs2_max", cfg.low_cs2_max);
     set_bool(values, "low_cs2_monotonic", cfg.low_cs2_monotonic);
+    set_bool(values, "cs2_pt_monotonic", cfg.cs2_pt_monotonic);
+
 
     set_number(values, "n_qcd", cfg.n_qcd);
     set_number(values, "mu_qcd", cfg.mu_qcd);

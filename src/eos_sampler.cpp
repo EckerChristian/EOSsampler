@@ -1,5 +1,4 @@
 #include "eos.hpp"
-
 #include "constants.hpp"
 #include "hdf5_io.hpp"
 #include "schema.hpp"
@@ -851,6 +850,15 @@ EOSSample make_candidate(
         if (!is_finite(nPTl_check) || nPTl_check < nPTmin || nPTl_check > nPTmax) {
             return sample;
         }
+    }
+
+    if (cfg.cs2_pt_monotonic && cfg.include_phase_transition) {
+        for (int i = 1; i <= PTpoint; ++i) {
+            if (cseg[i] < cseg[0])
+                cseg[i] = uniform(rng, cseg[0], cmax_sample);
+        }
+        std::sort(cseg.begin() + 1, cseg.begin() + PTpoint + 1);
+        std::sort(cseg.begin() + PTpoint + 1, cseg.end());
     }
 
     const double cs2PTl = cfg.include_phase_transition ? cseg[PTpoint] : 0.0;

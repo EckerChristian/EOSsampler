@@ -28,6 +28,7 @@ cs2_cet_min: 0.01
 cs2_cet_max: 0.3
 low_cs2_max: 0.3
 low_cs2_monotonic: true
+cs2_pt_monotonic: false
 
 n_qcd: 40.0
 mu_qcd: 2.6
