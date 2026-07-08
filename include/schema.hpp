@@ -47,7 +47,7 @@ inline constexpr std::array<std::string_view, 11> tov_datasets = {
     "Rqm"
 };
 
-inline constexpr std::array<std::string_view, 14> params_datasets = {
+inline constexpr std::array<std::string_view, 15> params_datasets = {
     "dn",
     "ePTl",
     "pPT",
@@ -61,7 +61,8 @@ inline constexpr std::array<std::string_view, 14> params_datasets = {
     "pGW",
     "ptot",
     "nbranches",
-    "pXray"
+    "pXray",
+    "pBH"
 };
 
 } // namespace eos::schema

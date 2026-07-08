@@ -67,6 +67,7 @@ mtov_max: 10.0
 enable_mass_likelihood: true
 enable_gw_likelihood: true
 enable_xray_likelihoods: true
+impose_bh_hypothesis: false
 
 pulsar_mass_mu: 1.908
 pulsar_mass_sigma: 0.016
@@ -98,3 +99,4 @@ shb_dataset: "rescaled/data/like"
 
 # GW170817
 gw170817_file: "../constraints/LV/LV_prior.h5"
+gw170817_q_file: "../constraints/LV/LV_prior_q.h5"

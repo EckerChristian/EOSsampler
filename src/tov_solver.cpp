@@ -609,6 +609,7 @@ void write_tov_sequence(hid_t group_id, std::string_view tov_group_name, const T
 void ensure_param_datasets(hid_t params_group) {
     if (!hdf5::link_exists(params_group, "pM")) hdf5::create_dataset_double(params_group, "pM", 1);
     if (!hdf5::link_exists(params_group, "pGW")) hdf5::create_dataset_double(params_group, "pGW", 1);
+    if (!hdf5::link_exists(params_group, "pBH")) hdf5::create_dataset_double(params_group, "pBH", 1);
     if (!hdf5::link_exists(params_group, "ptot")) hdf5::create_dataset_double(params_group, "ptot", 1);
     if (!hdf5::link_exists(params_group, "nbranches")) hdf5::create_dataset_int(params_group, "nbranches", 1);
     if (!hdf5::link_exists(params_group, "pXray")) hdf5::create_dataset_double(params_group, "pXray", 15);
@@ -638,6 +639,7 @@ void write_likelihoods(
 
     hdf5::write_double_scalar(params_group, "pM", like.p_mass);
     hdf5::write_double_scalar(params_group, "pGW", like.p_gw);
+    hdf5::write_double_scalar(params_group, "pBH", like.p_bh);
     hdf5::write_double_scalar(params_group, "ptot", p_total);
     hdf5::write_int_scalar(params_group, "nbranches", nbranches);
 

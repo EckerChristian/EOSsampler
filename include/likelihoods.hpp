@@ -33,6 +33,13 @@ struct LikelihoodResult {
     double p_gw = 1.0;
     double p_xray = 1.0;
     std::vector<double> p_xray_each;
+
+    // Standalone P(BH|EoS) (Eq. 23), diagnostic only. When
+    // Config::impose_bh_hypothesis is set, the black-hole-collapse
+    // constraint is instead folded directly into p_gw as the joint
+    // P(Lambda-tilde, BH|EoS) (Eq. 24), since both depend on the same
+    // mass ratio q and must not be imposed as independent factors.
+    double p_bh = 1.0;
 };
 
 class LikelihoodEvaluator {

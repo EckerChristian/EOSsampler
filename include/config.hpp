@@ -76,6 +76,7 @@ struct Config {
     bool enable_mass_likelihood = true;
     bool enable_gw_likelihood = true;
     bool enable_xray_likelihoods = true;
+    bool impose_bh_hypothesis = false;
     
     // Likelihood parameters.
     double pulsar_mass_mu = 1.908;
@@ -106,8 +107,9 @@ struct Config {
     
     std::string shb_dataset = "rescaled/data/like";
     
-    // GW path.
+    // GW paths.
     std::string gw170817_file = "../constraints/LV/LV_prior.h5";
+    std::string gw170817_q_file = "../constraints/LV/LV_prior_q.h5";
 
 
 };

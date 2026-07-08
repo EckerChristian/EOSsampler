@@ -1071,7 +1071,7 @@ void create_and_write_sample(hid_t file_id, int accepted, const EOSSample& sampl
         hdf5::write_double_array(eosext_group, "cs2", sample.cs2_ext);
     }
 
-    for (int i = 0; i < 14; ++i) {
+    for (int i = 0; i < 15; ++i) {
         const std::string dataset_name(schema::params_datasets[static_cast<std::size_t>(i)]);
         if (i == 12) {
             hdf5::create_dataset_int(params_group, dataset_name, 1);

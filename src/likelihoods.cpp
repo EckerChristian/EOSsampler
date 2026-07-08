@@ -28,9 +28,15 @@ struct Grid2D {
     std::vector<double> w;
 };
 
+struct Grid1D {
+    std::vector<double> x;
+    std::vector<double> w;
+};
+
 struct LikelihoodData {
     Grid2D gw;
     std::vector<Grid2D> xray;
+    Grid1D bh_q;
 };
 
 bool is_finite(double x) {
@@ -189,6 +195,31 @@ Grid2D read_grid2d(
                     }
                 }
             }
+        }
+
+        H5Fclose(file_id);
+        return grid;
+    } catch (...) {
+        H5Fclose(file_id);
+        throw;
+    }
+}
+
+Grid1D read_grid1d(
+    const std::string& file_path,
+    const std::string& x_dataset,
+    const std::string& w_dataset
+) {
+    hid_t file_id = H5Fopen(file_path.c_str(), H5F_ACC_RDONLY, H5P_DEFAULT);
+    check_hdf5_id(file_id, "likelihood file '" + file_path + "'");
+
+    try {
+        Grid1D grid;
+        grid.x = read_hdf5_vector(file_id, x_dataset);
+        grid.w = read_hdf5_vector(file_id, w_dataset);
+
+        if (grid.x.size() < 2 || grid.x.size() != grid.w.size()) {
+            throw std::runtime_error("Invalid 1D likelihood grid in file: " + file_path);
         }
 
         H5Fclose(file_id);
@@ -382,6 +413,26 @@ double mass_likelihood(const Config& cfg, const BranchInfo& branches) {
     return is_finite(result) ? result : 0.0;
 }
 
+// Baryon number of the maximum stable (non-rotating) star, N_TOV, used by the
+// black-hole-collapse hypothesis: a merger remnant with N(q) > N_TOV cannot
+// settle onto the stable branch and must collapse to a BH.
+double baryon_number_at_max_mass(const TOVSequence& tov) {
+    if (tov.mass.empty() || tov.baryon_number.size() != tov.mass.size()) return 0.0;
+
+    const bool has_stability = tov.stability.size() == tov.mass.size();
+
+    double mtov = 0.0;
+    double n_at_mtov = 0.0;
+    for (std::size_t i = 0; i < tov.mass.size(); ++i) {
+        if (has_stability && tov.stability[i] <= 0.0) continue;
+        if (tov.mass[i] > mtov) {
+            mtov = tov.mass[i];
+            n_at_mtov = tov.baryon_number[i];
+        }
+    }
+    return n_at_mtov;
+}
+
 double gw_likelihood(
     const Config& cfg,
     const TOVSequence& tov,
@@ -390,6 +441,15 @@ double gw_likelihood(
 ) {
     if (!cfg.enable_gw_likelihood) return 1.0;
     if (cfg.mass_likelihood_points < 2) return 0.0;
+
+    // When the BH-collapse hypothesis is imposed, it must be combined with
+    // the tidal-deformability constraint rather than treated as an
+    // independent factor, since both depend on the same mass ratio q
+    // (see LikelihoodResult::p_bh). Gate each (M1, q) contribution below by
+    // whether the binary's total baryon number exceeds N_TOV, turning this
+    // into the joint P(Lambda-tilde, BH|EoS).
+    const double n_tov = cfg.impose_bh_hypothesis ? baryon_number_at_max_mass(tov) : 0.0;
+    if (cfg.impose_bh_hypothesis && n_tov <= 0.0) return 0.0;
 
     double result = 0.0;
 
@@ -404,6 +464,7 @@ double gw_likelihood(
 
         const std::vector<double> branch_m1 = branch_values(tov.mass, branches.idx_start[b1], branches.idx_stop[b1]);
         const std::vector<double> branch_l1 = branch_values(tov.lambda, branches.idx_start[b1], branches.idx_stop[b1]);
+        const std::vector<double> branch_n1 = branch_values(tov.baryon_number, branches.idx_start[b1], branches.idx_stop[b1]);
 
         if (branch_m1.size() < 2 || branch_l1.size() < 2) continue;
 
@@ -412,6 +473,7 @@ double gw_likelihood(
         for (std::size_t b2 = 0; b2 < branches.idx_start.size(); ++b2) {
             const std::vector<double> branch_m2 = branch_values(tov.mass, branches.idx_start[b2], branches.idx_stop[b2]);
             const std::vector<double> branch_l2 = branch_values(tov.lambda, branches.idx_start[b2], branches.idx_stop[b2]);
+            const std::vector<double> branch_n2 = branch_values(tov.baryon_number, branches.idx_start[b2], branches.idx_stop[b2]);
 
             if (branch_m2.size() < 2 || branch_l2.size() < 2) continue;
 
@@ -426,11 +488,77 @@ double gw_likelihood(
                 if (lambda1 <= 0.0 || lambda2 <= 0.0) continue;
                 if (lambda1 > 1600.0 || lambda2 > 1600.0) continue;
 
+                if (cfg.impose_bh_hypothesis) {
+                    const double n1 = linear_interp_zero_outside(branch_m1, branch_n1, m1);
+                    const double n2 = linear_interp_zero_outside(branch_m2, branch_n2, m2);
+                    if (n1 <= 0.0 || n2 <= 0.0 || (n1 + n2) < n_tov) continue;
+                }
+
                 prob_total[i] += bilinear_interp_zero_outside(gw_grid, lambda1, lambda2);
             }
         }
 
         result += std::abs(trapezoid(prob_total, m1_grid));
+    }
+
+    return is_finite(result) ? result : 0.0;
+}
+
+// Standalone P(BH|EoS) (Eq. 23): same M1 integral as gw_likelihood, but using
+// the 1D GW170817 mass-ratio posterior P(d_GW|q) instead of the Lambda-tilde
+// grid. This is a diagnostic quantity only -- see the note on
+// LikelihoodResult::p_bh for why it is not multiplied into p_gw/ptot.
+double bh_likelihood(
+    const Config& cfg,
+    const TOVSequence& tov,
+    const BranchInfo& branches,
+    const Grid1D& q_grid
+) {
+    if (!cfg.impose_bh_hypothesis) return 1.0;
+    if (cfg.mass_likelihood_points < 2) return 0.0;
+
+    const double n_tov = baryon_number_at_max_mass(tov);
+    if (n_tov <= 0.0) return 0.0;
+
+    double result = 0.0;
+
+    for (std::size_t b1 = 0; b1 < branches.idx_start.size(); ++b1) {
+        if (branches.stop_mass[b1] <= branches.start_mass[b1]) continue;
+
+        const std::vector<double> m1_grid = linspace(
+            branches.start_mass[b1],
+            branches.stop_mass[b1],
+            cfg.mass_likelihood_points
+        );
+
+        const std::vector<double> branch_m1 = branch_values(tov.mass, branches.idx_start[b1], branches.idx_stop[b1]);
+        const std::vector<double> branch_n1 = branch_values(tov.baryon_number, branches.idx_start[b1], branches.idx_stop[b1]);
+
+        if (branch_m1.size() < 2 || branch_n1.size() < 2) continue;
+
+        std::vector<double> prob(m1_grid.size(), 0.0);
+
+        for (std::size_t b2 = 0; b2 < branches.idx_start.size(); ++b2) {
+            const std::vector<double> branch_m2 = branch_values(tov.mass, branches.idx_start[b2], branches.idx_stop[b2]);
+            const std::vector<double> branch_n2 = branch_values(tov.baryon_number, branches.idx_start[b2], branches.idx_stop[b2]);
+
+            if (branch_m2.size() < 2 || branch_n2.size() < 2) continue;
+
+            for (std::size_t i = 0; i < m1_grid.size(); ++i) {
+                const double m1 = m1_grid[i];
+                const double m2 = m2_from_chirp(cfg.chirp_mass, m1);
+                if (m2 <= 0.0) continue;
+
+                const double n1 = linear_interp_zero_outside(branch_m1, branch_n1, m1);
+                const double n2 = linear_interp_zero_outside(branch_m2, branch_n2, m2);
+                if (n1 <= 0.0 || n2 <= 0.0 || (n1 + n2) < n_tov) continue;
+
+                const double q = m2 / m1;
+                prob[i] += linear_interp_zero_outside(q_grid.x, q_grid.w, q);
+            }
+        }
+
+        result += std::abs(trapezoid(prob, m1_grid));
     }
 
     return is_finite(result) ? result : 0.0;
@@ -519,6 +647,14 @@ LikelihoodData load_likelihood_data(const Config& cfg) {
             "data",
             "x",
             "y"
+        );
+    }
+
+    if (cfg.impose_bh_hypothesis) {
+        data.bh_q = read_grid1d(
+            cfg.gw170817_q_file,
+            "x",
+            "data"
         );
     }
 
@@ -773,6 +909,12 @@ LikelihoodResult LikelihoodEvaluator::evaluate(
     } else {
         out.p_xray = 1.0;
         out.p_xray_each.assign(kXrayOutputLength, 0.0);
+    }
+
+    if (cfg_.impose_bh_hypothesis) {
+        out.p_bh = bh_likelihood(cfg_, tov, branches, data.bh_q);
+    } else {
+        out.p_bh = 1.0;
     }
 
     return out;

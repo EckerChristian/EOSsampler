@@ -235,6 +235,7 @@ Config load_config(const std::string& path) {
     set_bool(values, "enable_mass_likelihood", cfg.enable_mass_likelihood);
     set_bool(values, "enable_gw_likelihood", cfg.enable_gw_likelihood);
     set_bool(values, "enable_xray_likelihoods", cfg.enable_xray_likelihoods);
+    set_bool(values, "impose_bh_hypothesis", cfg.impose_bh_hypothesis);
     
     set_number(values, "pulsar_mass_mu", cfg.pulsar_mass_mu);
     set_number(values, "pulsar_mass_sigma", cfg.pulsar_mass_sigma);
@@ -263,6 +264,7 @@ Config load_config(const std::string& path) {
     set_string(values, "shb_dataset", cfg.shb_dataset);
     
     set_string(values, "gw170817_file", cfg.gw170817_file);
+    set_string(values, "gw170817_q_file", cfg.gw170817_q_file);
 
     return cfg;
 }
