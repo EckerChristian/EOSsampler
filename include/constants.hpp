@@ -19,6 +19,15 @@ inline constexpr double MeVbyfm3ToGev4 = 7.683505392094774E-6;
 
 inline constexpr double ns = 0.16;
 
+// Reference baryon mass (atomic mass unit) used to convert baryon number
+// density into a rest-mass density for the baryonic mass integral.
+inline constexpr double m_baryon_mev = 931.494;
+
+// MeV -> kg, used to turn m_baryon_mev into a rest mass for the total
+// baryon-number count A = M_b / m_baryon.
+inline constexpr double MeVtoJ = 1.602176634E-13;
+inline constexpr double MeVtoKg = MeVtoJ / (c * c);
+
 // pQCD constants
 inline constexpr double a11 = -2.0;
 inline constexpr double a21 = -1.0;

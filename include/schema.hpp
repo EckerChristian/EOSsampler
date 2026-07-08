@@ -33,8 +33,10 @@ inline constexpr std::array<std::string_view, 5> eos_ext_datasets = {
     "cs2"
 };
 
-inline constexpr std::array<std::string_view, 9> tov_datasets = {
+inline constexpr std::array<std::string_view, 11> tov_datasets = {
     "M",
+    "Mb",
+    "Nb",
     "R",
     "Lambda",
     "stab",

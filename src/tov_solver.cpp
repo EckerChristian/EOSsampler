@@ -194,8 +194,8 @@ double cs2_from_energy(double e, const EOSTable& eos_table) {
 }
 
 void rhs(
-    const std::array<double, 4>& y,
-    std::array<double, 4>& f,
+    const std::array<double, 5>& y,
+    std::array<double, 5>& f,
     double r,
     double p_surface_cut,
     const EOSTable& eos_table,
@@ -207,7 +207,7 @@ void rhs(
     const double dH = y[3];
 
     if (p < p_surface_cut || r <= 0.0 || !finite(p) || !finite(m)) {
-        f = {0.0, 0.0, 0.0, 0.0};
+        f = {0.0, 0.0, 0.0, 0.0, 0.0};
         surface_reached = true;
         return;
     }
@@ -220,7 +220,7 @@ void rhs(
     const double metric = 1.0 - 2.0 * Gh * m / r;
 
     if (denom == 0.0 || metric <= 0.0 || !finite(e) || !finite(dedp)) {
-        f = {0.0, 0.0, 0.0, 0.0};
+        f = {0.0, 0.0, 0.0, 0.0, 0.0};
         surface_reached = true;
         return;
     }
@@ -238,41 +238,47 @@ void rhs(
         4.0 * Gh * pi * (9.0 * p + 5.0 * e + (p + e) * dedp) / metric;
 
     f[3] = term1 + (term2 + term3 - term4) * H;
+
+    // Baryonic mass: integrate the rest-mass density over proper volume,
+    // 4*pi*r^2/sqrt(1 - 2Gm/r) dr, using n(e) from the EOS table.
+    const double n = number_from_energy(e, eos_table);
+    const double rho0 = m_baryon_mev * n * MeVbyfm3ToGev4;
+    f[4] = 4.0 * pi * r * r * rho0 / std::sqrt(metric);
 }
 
-std::array<double, 4> rk4_step(
-    const std::array<double, 4>& y,
+std::array<double, 5> rk4_step(
+    const std::array<double, 5>& y,
     double r,
     double dr,
     double p_surface_cut,
     const EOSTable& eos_table,
     bool& surface_reached
 ) {
-    std::array<double, 4> k1{}, k2{}, k3{}, k4{}, yt{};
+    std::array<double, 5> k1{}, k2{}, k3{}, k4{}, yt{};
 
     rhs(y, k1, r, p_surface_cut, eos_table, surface_reached);
     if (surface_reached) return y;
 
-    for (int i = 0; i < 4; ++i) yt[i] = y[i] + 0.5 * dr * k1[i];
+    for (int i = 0; i < 5; ++i) yt[i] = y[i] + 0.5 * dr * k1[i];
     rhs(yt, k2, r + 0.5 * dr, p_surface_cut, eos_table, surface_reached);
     if (surface_reached) return y;
 
-    for (int i = 0; i < 4; ++i) yt[i] = y[i] + 0.5 * dr * k2[i];
+    for (int i = 0; i < 5; ++i) yt[i] = y[i] + 0.5 * dr * k2[i];
     rhs(yt, k3, r + 0.5 * dr, p_surface_cut, eos_table, surface_reached);
     if (surface_reached) return y;
 
-    for (int i = 0; i < 4; ++i) yt[i] = y[i] + dr * k3[i];
+    for (int i = 0; i < 5; ++i) yt[i] = y[i] + dr * k3[i];
     rhs(yt, k4, r + dr, p_surface_cut, eos_table, surface_reached);
     if (surface_reached) return y;
 
-    std::array<double, 4> out{};
-    for (int i = 0; i < 4; ++i) {
+    std::array<double, 5> out{};
+    for (int i = 0; i < 5; ++i) {
         out[i] = y[i] + (dr / 6.0) * (k1[i] + 2.0 * k2[i] + 2.0 * k3[i] + k4[i]);
     }
     return out;
 }
 
-double tidal_lambda(const std::array<double, 4>& y, double r) {
+double tidal_lambda(const std::array<double, 5>& y, double r) {
     if (r <= 0.0 || y[2] == 0.0) return 0.0;
 
     const double C = Gh * y[1] / r;
@@ -432,6 +438,8 @@ TOVSequence solve_sequence(
     ) {
     TOVSequence seq;
     seq.mass.reserve(static_cast<std::size_t>(cfg.n_tov));
+    seq.mass_baryon.reserve(static_cast<std::size_t>(cfg.n_tov));
+    seq.baryon_number.reserve(static_cast<std::size_t>(cfg.n_tov));
     seq.radius.reserve(static_cast<std::size_t>(cfg.n_tov));
     seq.lambda.reserve(static_cast<std::size_t>(cfg.n_tov));
     seq.e_cent.reserve(static_cast<std::size_t>(cfg.n_tov));
@@ -456,11 +464,15 @@ TOVSequence solve_sequence(
         const double ec = energy_from_pressure(pc, eos_table);
         if (!finite(ec) || ec <= 0.0) break;
 
-        std::array<double, 4> y{
+        const double n_center = number_from_energy(ec, eos_table);
+        const double rho0_center = m_baryon_mev * n_center * MeVbyfm3ToGev4;
+
+        std::array<double, 5> y{
             pc,
             (4.0 / 3.0) * pi * std::pow(cfg.r_initial, 3.0) * ec,
             cfg.r_initial * cfg.r_initial,
-            2.0 * cfg.r_initial
+            2.0 * cfg.r_initial,
+            (4.0 / 3.0) * pi * std::pow(cfg.r_initial, 3.0) * rho0_center
         };
 
         double r = cfg.r_initial;
@@ -469,14 +481,14 @@ TOVSequence solve_sequence(
         bool crossed_pt = false;
         double r_qm = 0.0;
 
-        std::array<double, 4> previous = y;
+        std::array<double, 5> previous = y;
         double previous_r = r;
 
         for (int i = 0; i < cfg.n_radial - 1; ++i) {
             previous = y;
             previous_r = r;
 
-            std::array<double, 4> next = rk4_step(y, r, dr, cfg.p_surface_cut, eos_table, surface_reached);
+            std::array<double, 5> next = rk4_step(y, r, dr, cfg.p_surface_cut, eos_table, surface_reached);
             if (surface_reached) break;
 
             if (crosses_pt && !crossed_pt && y[0] >= p_pt && next[0] < p_pt) {
@@ -501,7 +513,12 @@ TOVSequence solve_sequence(
 
         if (!finite(mass) || !finite(surface_r) || mass <= 0.0 || surface_r <= 0.0) break;
 
+        const double mass_baryon = surface_state[4] / M_solarh;
+        const double baryon_number = (mass_baryon * M_solar) / (m_baryon_mev * MeVtoKg);
+
         seq.mass.push_back(mass);
+        seq.mass_baryon.push_back(mass_baryon);
+        seq.baryon_number.push_back(baryon_number);
         seq.radius.push_back(surface_r);
         seq.lambda.push_back(lambda);
         seq.e_cent.push_back(ec / MeVbyfm3ToGev4);
@@ -561,6 +578,8 @@ void write_tov_sequence(hid_t group_id, std::string_view tov_group_name, const T
     const hsize_t len = static_cast<hsize_t>(seq.mass.size());
 
     hdf5::recreate_dataset_double(tov_group, "M", len);
+    hdf5::recreate_dataset_double(tov_group, "Mb", len);
+    hdf5::recreate_dataset_double(tov_group, "Nb", len);
     hdf5::recreate_dataset_double(tov_group, "R", len);
     hdf5::recreate_dataset_double(tov_group, "Lambda", len);
     hdf5::recreate_dataset_double(tov_group, "stab", len);
@@ -572,6 +591,8 @@ void write_tov_sequence(hid_t group_id, std::string_view tov_group_name, const T
     hdf5::recreate_dataset_double(tov_group, "Rqm", len);
 
     hdf5::write_double_array(tov_group, "M", seq.mass);
+    hdf5::write_double_array(tov_group, "Mb", seq.mass_baryon);
+    hdf5::write_double_array(tov_group, "Nb", seq.baryon_number);
     hdf5::write_double_array(tov_group, "R", seq.radius);
     hdf5::write_double_array(tov_group, "Lambda", seq.lambda);
     hdf5::write_double_array(tov_group, "stab", seq.stability);

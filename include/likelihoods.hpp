@@ -8,6 +8,8 @@ namespace eos {
 
 struct TOVSequence {
     std::vector<double> mass;
+    std::vector<double> mass_baryon;
+    std::vector<double> baryon_number;
     std::vector<double> radius;
     std::vector<double> lambda;
     std::vector<double> stability;
