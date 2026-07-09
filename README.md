@@ -109,6 +109,7 @@ crust_eos_file: "../crust/BPS2.txt"
 ceft_file: "../ceft/ceft2NLO_1.1ns.dat"
 pqcd_file: "../pQCD/cs2_muB_mean_std_scale_ave.dat"
 gw170817_file: "../constraints/LV/LV_prior.h5"
+gw170817_q_file: "../constraints/LV/LV_prior_q.h5"
 ```
 
 ## Phase transitions and EOSext
@@ -144,6 +145,26 @@ The `EOSext` table contains the already constructed low-density EOS up to the le
 The default maximum extension length is `500 MeV`. If the sound speed reaches `cs2 = 1`, the endpoint is finite and may be written. If the sound speed would reach `cs2 = 0`, the code stops before appending a singular point, because the density evolution contains the factor `1 / cs2`.
 
 `EOSext` is intended as an auxiliary diagnostic/output table. It is not used by the TOV solver unless the TOV code is explicitly modified to read it.
+
+## Baryonic mass and baryon number
+
+Each TOV sequence point additionally records the baryonic mass `Mb` and the total baryon number `Nb` of the star, alongside the gravitational mass `M`. `Mb` is computed by integrating the rest-mass density `n(r) * m_baryon` over proper volume, using the atomic mass unit (`m_baryon_mev = 931.494 MeV`, see `include/constants.hpp`) as the reference baryon mass. `Nb` is the actual baryon count, `Nb = Mb[Msun] * M_solar[kg] / m_baryon[kg]` (order `10^57` for a typical neutron star).
+
+## Black-hole-collapse hypothesis (GW170817)
+
+The remnant of GW170817 is believed to have collapsed promptly to a black hole. This is imposed as a likelihood constraint requiring the total baryon number of the merging binary, `N(q) = N1(M1) + N2(M2)`, to exceed `N_TOV`, the baryon number of the maximum-mass stable (non-rotating) star. It is controlled by:
+
+```yaml
+impose_bh_hypothesis: false
+gw170817_q_file: "../constraints/LV/LV_prior_q.h5"
+```
+
+`gw170817_q_file` is a 1D table of the GW170817 mass-ratio posterior `P(d_GW|q)`, built by `constraints/LV/lv_q_prior.ipynb` from the same raw low-spin `PhenomPNRT` posterior samples used to build `LV_prior.h5`. Regenerate it there if the posterior samples or KDE settings change.
+
+When `impose_bh_hypothesis: true`:
+
+- `pGW` itself is changed in place to the **joint** likelihood `P(Lambda-tilde, BH|EoS)`: inside the existing tidal-deformability integral over `(M1, q)`, points where `N(q) < N_TOV` are excluded before being weighted by the Lambda-tilde grid. This is required because the tidal-deformability and BH constraints are not independent -- both depend on the same mass ratio `q` for the same event.
+- `pBH`, the **standalone** `P(BH|EoS)` computed from `gw170817_q_file`, is also written to the output file, but it is a diagnostic only and is *not* multiplied into `ptot`. If `enable_gw_likelihood: false`, `impose_bh_hypothesis` has no effect on `ptot`, since the constraint only ever gates inside `gw_likelihood`.
 
 ## Building
 
@@ -253,10 +274,13 @@ The TOV datasets are:
 
 ```text
 /<eos_index>/TOV/M
+/<eos_index>/TOV/Mb
+/<eos_index>/TOV/Nb
 /<eos_index>/TOV/R
 /<eos_index>/TOV/Lambda
 /<eos_index>/TOV/stab
 /<eos_index>/TOV/e_cent
+/<eos_index>/TOV/p_cent
 /<eos_index>/TOV/mu_cent
 /<eos_index>/TOV/n_cent
 /<eos_index>/TOV/cs2_cent
@@ -277,10 +301,13 @@ The parameter datasets include:
 /<eos_index>/params/pPQCD
 /<eos_index>/params/pM
 /<eos_index>/params/pGW
+/<eos_index>/params/pBH
 /<eos_index>/params/ptot
 /<eos_index>/params/nbranches
 /<eos_index>/params/pXray
 ```
+
+`pBH` is the standalone `P(BH|EoS)` diagnostic (see "Black-hole-collapse hypothesis" above); it is `1.0` unless `impose_bh_hypothesis: true`, and it is not included in `ptot`.
 
 ## Inspecting output
 
@@ -442,6 +469,7 @@ If `pGW`, `pXray`, or `ptot` are exactly zero for all EOSs, common causes are:
 - radius and mass axes swapped
 - lambda axes swapped
 - TOV curve lies outside the likelihood grid
+- `impose_bh_hypothesis: true` and the EOS's `N_TOV` is high enough that no sampled `(M1, q)` pair satisfies `N(q) >= N_TOV`, gating `pGW` to zero for that EoS
 
 Test likelihood modules one at a time.
 
