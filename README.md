@@ -152,7 +152,7 @@ Each TOV sequence point additionally records the baryonic mass `Mb` and the tota
 
 ## Black-hole-collapse hypothesis (GW170817)
 
-The remnant of GW170817 is believed to have collapsed promptly to a black hole. This is imposed as a likelihood constraint requiring the total baryon number of the merging binary, `N(q) = N1(M1) + N2(M2)`, to exceed `N_TOV`, the baryon number of the maximum-mass stable (non-rotating) star. It is controlled by:
+The remnant of GW170817 is believed to have collapsed to a black hole. This is imposed as a likelihood constraint requiring the total baryon number of the merging binary, `N(q) = N1(M1) + N2(M2)`, to exceed `N_TOV`, the baryon number of the maximum-mass stable (non-rotating) star. It is controlled by:
 
 ```yaml
 impose_bh_hypothesis: false
