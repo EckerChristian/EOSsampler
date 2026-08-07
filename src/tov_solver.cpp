@@ -28,6 +28,10 @@ struct EOSTable {
     std::vector<double> cs2;
 };
 
+
+bool finite(double x) {
+    return std::isfinite(x);
+}
 struct TransitionInfo {
     double p_pt_mevfm3 = 0.0;
     double e_left_mevfm3 = 0.0;
@@ -58,10 +62,6 @@ struct TransitionInfo {
         return delta / e_left_mevfm3 > critical;
     }
 };
-
-bool finite(double x) {
-    return std::isfinite(x);
-}
 
 std::size_t find_interval(const std::vector<double>& x, double xq) {
     if (x.size() < 2) {

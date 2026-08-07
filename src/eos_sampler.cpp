@@ -293,34 +293,34 @@ double cs2_qcd(double mub, double X) {
 double cs_at_mu(
     double mu,
     const std::vector<double>& m,
-    const std::vector<double>& c
+    const std::vector<double>& cc
 ) {
-    if (m.size() != c.size() || m.size() < 2) {
+    if (m.size() != cc.size() || m.size() < 2) {
         throw std::runtime_error("Invalid cs2 segment table");
     }
 
-    if (mu <= m.front()) return c.front();
-    if (mu >= m.back()) return c.back();
+    if (mu <= m.front()) return cc.front();
+    if (mu >= m.back()) return cc.back();
 
     for (std::size_t i = 0; i + 1 < m.size(); ++i) {
         if (mu >= m[i] && mu <= m[i + 1]) {
             const double dmu = m[i + 1] - m[i];
-            if (dmu == 0.0) return c[i + 1];
-            return (c[i] * (m[i + 1] - mu) + (mu - m[i]) * c[i + 1]) / dmu;
+            if (dmu == 0.0) return cc[i + 1];
+            return (cc[i] * (m[i + 1] - mu) + (mu - m[i]) * cc[i + 1]) / dmu;
         }
     }
 
-    return c.back();
+    return cc.back();
 }
 
 double density_at_mu(
     double mu,
     const std::vector<double>& m,
-    const std::vector<double>& c,
+    const std::vector<double>& cc,
     double n0,
     double dn
 ) {
-    if (m.size() != c.size() || m.size() < 2) {
+    if (m.size() != cc.size() || m.size() < 2) {
         throw std::runtime_error("Invalid density segment table");
     }
 
@@ -340,11 +340,11 @@ double density_at_mu(
                 continue;
             }
 
-            const double denom = c[k + 1] * m[k] - c[k] * m[k + 1];
+            const double denom = cc[k + 1] * m[k] - cc[k] * m[k + 1];
             if (denom == 0.0) return std::numeric_limits<double>::quiet_NaN();
 
             value *= std::pow(
-                (m[k] * c[k + 1]) / (m[k + 1] * c[k]),
+                (m[k] * cc[k + 1]) / (m[k + 1] * cc[k]),
                 (m[k + 1] - m[k]) / denom
             );
         }
@@ -354,12 +354,12 @@ double density_at_mu(
             return value;
         }
 
-        const double denom = c[i + 1] * m[i] - c[i] * m[i + 1];
+        const double denom = cc[i + 1] * m[i] - cc[i] * m[i + 1];
         if (denom == 0.0) return std::numeric_limits<double>::quiet_NaN();
 
-        const double cs2_interp = c[i] * (m[i + 1] - mu) + (mu - m[i]) * c[i + 1];
+        const double cs2_interp = cc[i] * (m[i + 1] - mu) + (mu - m[i]) * cc[i + 1];
         value *= std::pow(
-            (m[i] * cs2_interp) / (mu * c[i] * (m[i + 1] - m[i])),
+            (m[i] * cs2_interp) / (mu * cc[i] * (m[i + 1] - m[i])),
             (m[i + 1] - m[i]) / denom
         );
 
@@ -373,11 +373,11 @@ double density_at_mu(
             continue;
         }
 
-        const double denom = c[k + 1] * m[k] - c[k] * m[k + 1];
+        const double denom = cc[k + 1] * m[k] - cc[k] * m[k + 1];
         if (denom == 0.0) return std::numeric_limits<double>::quiet_NaN();
 
         value *= std::pow(
-            (m[k] * c[k + 1]) / (m[k + 1] * c[k]),
+            (m[k] * cc[k + 1]) / (m[k + 1] * cc[k]),
             (m[k + 1] - m[k]) / denom
         );
     }
@@ -388,7 +388,7 @@ double density_at_mu(
 double pressure_at_mu(
     double mu,
     const std::vector<double>& m,
-    const std::vector<double>& c,
+    const std::vector<double>& cc,
     double n0,
     double p0,
     double dn
@@ -399,11 +399,11 @@ double pressure_at_mu(
     if (dx <= 0.0) return p0;
 
     double value = 0.5 *
-                   (density_at_mu(m.front(), m, c, n0, dn) +
-                    density_at_mu(mu, m, c, n0, dn));
+                   (density_at_mu(m.front(), m, cc, n0, dn) +
+                    density_at_mu(mu, m, cc, n0, dn));
 
     for (int i = 1; i < n_steps; ++i) {
-        value += density_at_mu(m.front() + i * dx, m, c, n0, dn);
+        value += density_at_mu(m.front() + i * dx, m, cc, n0, dn);
     }
 
     return dx * value * 1000.0 + p0;
