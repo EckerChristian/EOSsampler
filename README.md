@@ -50,7 +50,7 @@ External EOS input tables and likelihood files are not stored directly in the so
 
 Required:
 
-- C++17 compiler
+- C++17 compiler (GCC, Clang, or MSVC)
 - CMake 3.16 or newer
 - MPI
 - HDF5 with C API
@@ -62,12 +62,53 @@ Optional for plotting and inspection:
 - `numpy`
 - `matplotlib`
 
-On a cluster, load the corresponding modules before configuring the project, for example:
+### On a cluster (Linux)
+
+Load the corresponding modules before configuring the project, for example:
 
 ```bash
 module load cmake
 module load mpi
 module load hdf5
+```
+
+### On Windows (PowerShell)
+
+The default toolchain on Windows is **MSVC + Visual Studio generator**.
+
+#### 1. Compiler and build tools
+
+Install Visual Studio 2022 Build Tools and CMake:
+
+```powershell
+winget install Microsoft.VisualStudio.2022.BuildTools
+winget install Kitware.CMake
+```
+
+#### 2. HDF5
+
+Download the Windows binary installer from https://www.hdfgroup.org/downloads/hdf5/
+
+The HDF5 installer ships its own `hdf5-config.cmake` under the `cmake\` folder. Point CMake at it via `HDF5_DIR`:
+
+```powershell
+[Environment]::SetEnvironmentVariable("HDF5_DIR", "C:\Program Files\HDF_Group\HDF5\2.1.1\cmake", "User")
+```
+
+Also add the HDF5 `bin\` directory to `PATH` so `hdf5.dll` is found at runtime:
+
+```powershell
+$existing = [Environment]::GetEnvironmentVariable("PATH", "User")
+[Environment]::SetEnvironmentVariable("PATH", "$existing;C:\Program Files\HDF_Group\HDF5\2.1.1\bin", "User")
+```
+
+#### 3. MPI
+
+MS-MPI needs **both** the runtime and the SDK. `winget` typically only installs the runtime; download the SDK (`msmpisdk.msi`) directly from Microsoft: https://www.microsoft.com/en-us/download/details.aspx?id=105289
+
+```powershell
+winget install Microsoft.MPI                            # runtime
+# then install msmpisdk.msi manually from the URL above
 ```
 
 ## Configuration
@@ -168,6 +209,8 @@ When `impose_bh_hypothesis: true`:
 
 ## Building
 
+### On Linux
+
 From the project root:
 
 ```bash
@@ -183,17 +226,30 @@ build/EOS
 build/TOV
 ```
 
-For debugging, use:
+For debugging, use `-DCMAKE_BUILD_TYPE=Debug`. Release mode is recommended for production runs.
 
-```bash
-rm -rf build
-cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug
+### On Windows (PowerShell)
+
+From the project root, after completing the setup above:
+
+```powershell
+Remove-Item -Recurse -Force build
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
 cmake --build build -j
 ```
 
-Release mode is recommended for production runs.
+This produces (Debug or Release subdirectory depending on build type):
+
+```text
+build\Release\EOS.exe
+build\Release\TOV.exe
+```
+
+For debugging, use `-DCMAKE_BUILD_TYPE=Debug` and the executables land in `build\Debug\`.
 
 ## Running
+
+### On Linux
 
 Run the EOS stage first:
 
@@ -222,6 +278,18 @@ Then run the TOV stage with the same number of ranks:
 ```bash
 mpirun -np 2 ./TOV ../config/default.yaml
 ```
+
+### On Windows (PowerShell)
+
+MS-MPI uses `mpiexec` (not `mpirun`) and the executables sit in the `Debug\` or `Release\` subfolder:
+
+```powershell
+cd build
+mpiexec -n 1 .\Release\EOS.exe ..\config\default.yaml 12345
+mpiexec -n 1 .\Release\TOV.exe ..\config\default.yaml
+```
+
+For multiple ranks, replace `-n 1` with e.g. `-n 2`. The EOS and TOV stages must be run with the same number of ranks.
 
 The TOV executable opens the existing HDF5 files, reads each `/EOS` table, solves the TOV sequence, evaluates likelihoods, and writes the results back into the same files.
 
@@ -472,6 +540,19 @@ If `pGW`, `pXray`, or `ptot` are exactly zero for all EOSs, common causes are:
 - `impose_bh_hypothesis: true` and the EOS's `N_TOV` is high enough that no sampled `(M1, q)` pair satisfies `N(q) >= N_TOV`, gating `pGW` to zero for that EoS
 
 Test likelihood modules one at a time.
+
+### Windows: `Could NOT find HDF5` or `Could NOT find MPI`
+
+Even after installing HDF5 and MS-MPI, CMake fails to find them. Checklist:
+
+1. Open a **fresh** PowerShell — environment variables set via `[Environment]::SetEnvironmentVariable` are only visible to processes started after the call.
+2. `echo $env:HDF5_DIR` should print the path to the `cmake\` folder inside your HDF5 install, not `HDF5_ROOT`.
+3. `echo $env:MSMPI_INC` and `echo $env:MSMPI_LIB64` should both print non-empty paths. If they are empty, the MS-MPI **SDK** was not installed (only the runtime). Install `msmpisdk.msi` from the Microsoft download page.
+4. Wipe the build directory (`Remove-Item -Recurse -Force build`) before reconfiguring — CMake caches failed searches.
+
+### Windows: `'/Wextra' not valid`
+
+MSVC does not accept GCC-style `-Wall -Wextra -Wpedantic`. The `CMakeLists.txt` guards warning flags with `$<$<CXX_COMPILER_ID:GNU,Clang,AppleClang>:...>` generator expressions. If you re-added GCC flags unconditionally, wrap them in the generator expression again.
 
 ## Development notes
 

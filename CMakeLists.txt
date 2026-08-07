@@ -49,15 +49,15 @@ foreach(target EOS TOV)
 
     target_compile_options(${target}
         PRIVATE
-            $<$<CONFIG:Release>:-O3>
+            $<$<AND:$<CONFIG:Release>,$<CXX_COMPILER_ID:GNU,Clang,AppleClang>>:-O3>
+            $<$<AND:$<CONFIG:Release>,$<CXX_COMPILER_ID:MSVC>>:/O2>
     )
 
     if(ENABLE_WARNINGS)
         target_compile_options(${target}
             PRIVATE
-                -Wall
-                -Wextra
-                -Wpedantic
+                $<$<CXX_COMPILER_ID:GNU,Clang,AppleClang>:-Wall -Wextra -Wpedantic>
+                $<$<CXX_COMPILER_ID:MSVC>:/W4 /permissive->
         )
     endif()
 endforeach()
